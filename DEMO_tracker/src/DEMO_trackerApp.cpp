@@ -33,6 +33,7 @@ class DEMO_trackerApp : public App {
 	audio::MonitorSpectralNodeRef		m_monitorSpectralNode;
 	//audio::FilterHighPassNodeRef		m_highPass;
 	vector<float>						m_magSpectrum;
+	vector<float>						m_prevMagSpectrum;
 
 	float								m_spectralCentroid;// spectral mass point
 	float								m_spectralFlux;//spectral change over time
@@ -45,7 +46,8 @@ class DEMO_trackerApp : public App {
 
 	vector<float>						highPassFilter(float cutoff, vector<float> spectrum);
 	vector<float>						lowPassFilter(float cutoff, vector<float> spectrum);
-	float								getSpectralFlux(vector<float> spectrum);
+	
+	float								getSpectralFlux(vector<float> spectrum, vector<float> prevSpectrum);
 	float								getSpectralSharpness(vector<float> spectrum);
 
 	void								manageTimerBasedOnVolume(float volume);
@@ -123,14 +125,15 @@ void DEMO_trackerApp::update()
 
 		m_state = PASSIVE;
 
-		
+		m_prevMagSpectrum = m_magSpectrum;
+
 		//filtering
 		m_magSpectrum = highPassFilter(m_highPassCutoff, m_monitorSpectralNode->getMagSpectrum());
 		m_magSpectrum = lowPassFilter(m_lowPassCutoff, m_magSpectrum);
 		
 		//calculating values
 		m_spectralCentroid = m_monitorSpectralNode->getSpectralCentroid();
-		m_spectralFlux = getSpectralFlux(m_magSpectrum);
+		m_spectralFlux = getSpectralFlux(m_magSpectrum,m_prevMagSpectrum);
 		m_spectralSharpness = getSpectralSharpness(m_magSpectrum);
 
 		
@@ -148,11 +151,10 @@ void DEMO_trackerApp::update()
 		else {
 			if (!m_timer.isStopped()) {
 				m_timer.stop();
-				//end recording
 			}
 		}
 
-
+		
 		sendValues();
 	}
 	else {
@@ -242,19 +244,29 @@ vector<float>	DEMO_trackerApp::lowPassFilter(float cutoff, vector<float> spectru
 	return spectrum;
 }
 
-float	DEMO_trackerApp::getSpectralFlux(vector<float> spectrum) {
+float	DEMO_trackerApp::getSpectralFlux(vector<float> spectrum, vector<float> prevSpectrum) {
+
+	if (spectrum.size() != prevSpectrum.size()) {
+		return 0.0f;
+	}
+
+	if (spectrum.size() == 0) {
+		return 0.0f;
+	}
+
+	float flux = 0.0f;
+
+	for (int i = 0; i < spectrum.size(); i++) {
+		flux += abs(spectrum[i] - prevSpectrum[i]);
+	};
+
 	return 0.0f;
 }
 float	DEMO_trackerApp::getSpectralSharpness(vector<float> spectrum) {
 	return 0.0f;
 }
 void 	DEMO_trackerApp::sendValues() {
-	//send value via osc
-	float time = 0.0f;
-	if (!m_timer.isStopped()) {
-		time = (float)m_timer.getSeconds();
-	}
-
+	
 	//active flag
 	//m_spectralCentroid
 	//m_spectralFlux 
