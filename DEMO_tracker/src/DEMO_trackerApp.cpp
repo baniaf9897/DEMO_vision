@@ -2,6 +2,7 @@
 #include "cinder/app/RendererGl.h"
 #include "cinder/gl/gl.h"
 #include "cinder/audio/audio.h"
+#include "cinder/Timer.h"
 
 #include "OSCServer.h"
 
@@ -23,45 +24,91 @@ class DEMO_trackerApp : public App {
 	std::shared_ptr<OSCServer>			m_server;
 	audio::InputDeviceNodeRef			m_inputNode;
 	audio::MonitorSpectralNodeRef		m_monitorSpectralNode;
-	vector<float>						mMagSpectrum;
+	//audio::FilterHighPassNodeRef		m_highPass;
+	vector<float>						m_magSpectrum;
+
+	float								m_spectralCentroid;// spectral mass point
+	float								m_spectralFlux;//spectral change over time
+	float								m_spectralSharpness; //ratio of high frequency energy compared to total energy
+	float								m_volume;
+	
+	float								m_timeAboveVolumeThreshold;
+	float								m_volumeThresholdActive;
+	float								m_volumeThresholdPassive;
+
+	vector<float>						highPassFilter(float cutoff, vector<float> spectrum);
+	vector<float>						lowPassFilter(float cutoff, vector<float> spectrum);
+	float								getSpectralFlux(vector<float> spectrum);
+	float								getSpectralSharpness(vector<float> spectrum);
+
+	void								manageTimerBasedOnVolume(float volume);
+
+	void								sendValues();
+
+	float								m_highPassCutoff;
+
+	Timer								m_timer;
 
 
 };
 
 void DEMO_trackerApp::setup()
 {
+	m_highPassCutoff = 100.f;
+
+	m_volumeThresholdActive = 0.005;
+
 	m_server = std::make_shared<OSCServer>(3339);
-	
-	
 	
 	auto ctx = ci::audio::master();
 
 	m_inputNode = ctx->createInputDeviceNode();
-
 	m_monitorSpectralNode = ctx->makeNode(new audio::MonitorSpectralNode());
 
-	m_inputNode >> m_monitorSpectralNode;
+	//m_highPass = ctx->makeNode(new audio::FilterHighPassNode);
+	//m_highPass->setCutoffFreq(m_highPassCutoff);
+
+	m_inputNode  >> m_monitorSpectralNode;
 	m_inputNode->enable();
 	ctx->enable();
+
 }
 
 void DEMO_trackerApp::mouseDown( MouseEvent event )
 {
-	ci::osc::Message msg("/value/");
-	msg.append((float)1.0f);
+	
+}
 
+void DEMO_trackerApp::manageTimerBasedOnVolume(float volume) {
+	if (volume > m_volumeThresholdActive) {
 
-	m_server->sendMsg(msg);
+		if (m_timer.isStopped()) {
+			m_timer.start();
+			//record audio
 
-	console() << "Send value" << std::endl;
+		};
+	}
+	else {
+		if (!m_timer.isStopped()) {
+			m_timer.stop();
+			//end recording
+		}
+	}
+
 }
 
 void DEMO_trackerApp::update()
 {
-	mMagSpectrum = m_monitorSpectralNode->getMagSpectrum();
-	for (auto& i : mMagSpectrum) {
-		console() << i << std::endl;
-	}
+	m_magSpectrum = highPassFilter(m_highPassCutoff, m_monitorSpectralNode->getMagSpectrum());
+
+	m_volume = m_monitorSpectralNode->getVolume();
+	m_spectralCentroid = m_monitorSpectralNode->getSpectralCentroid();
+	m_spectralFlux = getSpectralFlux(m_magSpectrum);
+	m_spectralSharpness = getSpectralSharpness(m_magSpectrum);
+
+	manageTimerBasedOnVolume(m_volume);
+
+	sendValues();
 }
 
 void DEMO_trackerApp::draw()
@@ -69,7 +116,7 @@ void DEMO_trackerApp::draw()
 	gl::clear();
 	gl::enableAlphaBlending();
 
-	drawSpectrumPlot(mMagSpectrum);
+	drawSpectrumPlot(m_magSpectrum);
 
 }
 
@@ -119,6 +166,56 @@ void DEMO_trackerApp::drawSpectrumPlot(const vector<float>& magSpectrum)
 		batch.draw();
 
 	}
+
+vector<float>	DEMO_trackerApp::highPassFilter(float cutoff, vector<float> spectrum) {
+
+	auto ctx = ci::audio::master();
+
+	int binIndex = cutoff * (float)m_monitorSpectralNode->getFftSize()  / (float)ctx->getSampleRate() ;
+
+	for (int i = 0; i <= binIndex; i++) {
+		spectrum[i] = 0.0f;
+	}
+
+	return spectrum;
+}
+
+vector<float>	DEMO_trackerApp::lowPassFilter(float cutoff, vector<float> spectrum) {
+	auto ctx = ci::audio::master();
+
+	int binIndex = cutoff * (float)m_monitorSpectralNode->getFftSize() / (float)ctx->getSampleRate();
+
+	for (int i = binIndex; i < spectrum.size(); i++) {
+		spectrum[i] = 0.0f;
+	}
+
+	return spectrum;
+}
+
+float	DEMO_trackerApp::getSpectralFlux(vector<float> spectrum) {
+	return 0.0f;
+}
+float	DEMO_trackerApp::getSpectralSharpness(vector<float> spectrum) {
+	return 0.0f;
+}
+void 	DEMO_trackerApp::sendValues() {
+	//send value via osc
+	float time = 0.0f;
+	if (!m_timer.isStopped()) {
+		time = (float)m_timer.getSeconds();
+	}
+
+	/*ci::osc::Message msg("/value/");
+	msg.append((float)1.0f);
+
+
+	m_server->sendMsg(msg);
+	*/
+
+	console() << "Time " << time << std::endl;
+	console() << "SpectralCentroid " << m_spectralCentroid << std::endl;
+	console() << "Volume " << m_volume << std::endl;
+}
 
 
 CINDER_APP( DEMO_trackerApp, RendererGl )
