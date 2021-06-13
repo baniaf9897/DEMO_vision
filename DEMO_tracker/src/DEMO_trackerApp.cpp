@@ -250,20 +250,24 @@ float	DEMO_trackerApp::getSpectralFlux(vector<float> spectrum, vector<float> pre
 		return 0.0f;
 	}
 
-	if (spectrum.size() == 0) {
-		return 0.0f;
-	}
-
 	float flux = 0.0f;
 
 	for (int i = 0; i < spectrum.size(); i++) {
 		flux += abs(spectrum[i] - prevSpectrum[i]);
 	};
 
-	return 0.0f;
+	return flux;
 }
 float	DEMO_trackerApp::getSpectralSharpness(vector<float> spectrum) {
-	return 0.0f;
+	float sharpness = 0.0f;
+
+	for (int i = 0; i < spectrum.size(); i++) {
+		sharpness += i * spectrum[i];
+	};
+
+	sharpness /= spectrum.size();
+
+	return sharpness;
 }
 void 	DEMO_trackerApp::sendValues() {
 	
@@ -283,6 +287,10 @@ void 	DEMO_trackerApp::sendValues() {
 	msg.append((float)m_spectralFlux);
 	msg.append((float)m_spectralSharpness);
 
+	console() << "Active   " << m_state << std::endl;
+	console() << "Centroid " << m_spectralCentroid << std::endl;
+	console() << "Flux     " << m_spectralFlux << std::endl;
+	console() << "Sharpness" << m_spectralSharpness << std::endl;
 
 	m_server->sendMsg(msg);
 	
