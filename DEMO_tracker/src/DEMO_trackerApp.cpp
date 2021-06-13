@@ -31,6 +31,8 @@ class DEMO_trackerApp : public App {
 	std::shared_ptr<OSCServer>			m_server;
 	audio::InputDeviceNodeRef			m_inputNode;
 	audio::MonitorSpectralNodeRef		m_monitorSpectralNode;
+	audio::BufferRecorderNodeRef		m_recorderNode;
+
 	//audio::FilterHighPassNodeRef		m_highPass;
 	vector<float>						m_magSpectrum;
 	vector<float>						m_prevMagSpectrum;
@@ -40,9 +42,8 @@ class DEMO_trackerApp : public App {
 	float								m_spectralSharpness; //ratio of high frequency energy compared to total energy
 	float								m_volume;
 
-	float								m_volumeThresholdPassive;
-	float								m_volumeThresholdActive;
-	float								m_timeThresholdActive;
+	Timer								m_timer;
+	InteractionState					m_state;
 
 	vector<float>						highPassFilter(float cutoff, vector<float> spectrum);
 	vector<float>						lowPassFilter(float cutoff, vector<float> spectrum);
@@ -54,11 +55,14 @@ class DEMO_trackerApp : public App {
 
 	void								sendValues();
 
-	float								m_highPassCutoff;
-	float								m_lowPassCutoff;
+	std::string							getCurrentTime();
 
-	Timer								m_timer;
-	InteractionState					m_state;
+	const float							m_highPassCutoff = 20.0f;;
+	const float							m_lowPassCutoff = 20000.0f;
+	const float							m_volumeThresholdPassive = 40.0f;
+	const float							m_volumeThresholdActive  = 55.0f;
+	const float							m_timeThresholdActive = 0.5f;;
+	
 
 
 };
@@ -68,28 +72,21 @@ void DEMO_trackerApp::setup()
 
 	m_state = IDLE;
 
-	m_highPassCutoff = 100.f;
-	m_lowPassCutoff = 10000.f;
-
 	m_server = std::make_shared<OSCServer>(3339);
 	
 	auto ctx = ci::audio::master();
 
 	m_inputNode = ctx->createInputDeviceNode();
 	m_monitorSpectralNode = ctx->makeNode(new audio::MonitorSpectralNode());
-
+	m_recorderNode = ctx->makeNode(new audio::BufferRecorderNode());
+	m_recorderNode->setNumSeconds(10);
+	
 	//m_highPass = ctx->makeNode(new audio::FilterHighPassNode);
 	//m_highPass->setCutoffFreq(m_highPassCutoff);
 
-	m_inputNode  >> m_monitorSpectralNode;
+	m_inputNode  >> m_monitorSpectralNode >> m_recorderNode;
 	m_inputNode->enable();
 	ctx->enable();
-
-
-	m_volumeThresholdActive = 0.005f;
-	m_volumeThresholdPassive = 0.003f;
-	m_timeThresholdActive = 2.0f;
-
 
 }
 
@@ -119,7 +116,7 @@ void DEMO_trackerApp::manageTimerBasedOnVolume(float volume) {
 void DEMO_trackerApp::update()
 {
 	
-	m_volume = m_monitorSpectralNode->getVolume();
+	m_volume = audio::linearToDecibel(m_monitorSpectralNode->getVolume());
 
 	if (m_volume > m_volumeThresholdPassive) {
 
@@ -144,6 +141,11 @@ void DEMO_trackerApp::update()
 			}
 			else {
 				if (m_timer.getSeconds() > m_timeThresholdActive) {
+
+
+					if (m_recorderNode->getWritePosition() == 0) {
+						m_recorderNode->start();
+					}
 					m_state = ACTIVE;
 				}
 			}
@@ -151,6 +153,9 @@ void DEMO_trackerApp::update()
 		else {
 			if (!m_timer.isStopped()) {
 				m_timer.stop();
+				m_recorderNode->stop();
+				std::string fileName = "audio/" + getCurrentTime() + ".wav";
+				m_recorderNode->writeToFile(fileName);
 			}
 		}
 
@@ -253,7 +258,7 @@ float	DEMO_trackerApp::getSpectralFlux(vector<float> spectrum, vector<float> pre
 	float flux = 0.0f;
 
 	for (int i = 0; i < spectrum.size(); i++) {
-		flux += abs(spectrum[i] - prevSpectrum[i]);
+		flux += audio::linearToDecibel(abs(spectrum[i] - prevSpectrum[i]));
 	};
 
 	return flux;
@@ -262,7 +267,7 @@ float	DEMO_trackerApp::getSpectralSharpness(vector<float> spectrum) {
 	float sharpness = 0.0f;
 
 	for (int i = 0; i < spectrum.size(); i++) {
-		sharpness += i * spectrum[i];
+		sharpness += i * audio::linearToDecibel(spectrum[i]);
 	};
 
 	sharpness /= spectrum.size();
@@ -294,6 +299,19 @@ void 	DEMO_trackerApp::sendValues() {
 
 	m_server->sendMsg(msg);
 	
+}
+
+std::string	DEMO_trackerApp::getCurrentTime() {
+	time_t rawtime;
+	struct tm* timeinfo;
+	char buffer[80];
+
+	time(&rawtime);
+	timeinfo = localtime(&rawtime);
+
+		strftime(buffer, sizeof(buffer), "%d-%m-%Y/%H.%M.%S", timeinfo);
+	 std::string str(buffer);
+	 return str;
 }
 
 
