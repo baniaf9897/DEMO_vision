@@ -10,6 +10,13 @@ using namespace ci;
 using namespace ci::app;
 using namespace std;
 
+enum InteractionState {
+	IDLE,
+	PASSIVE,
+	ACTIVE
+};
+
+
 class DEMO_trackerApp : public App {
   public:
 	void setup() override;
@@ -31,10 +38,10 @@ class DEMO_trackerApp : public App {
 	float								m_spectralFlux;//spectral change over time
 	float								m_spectralSharpness; //ratio of high frequency energy compared to total energy
 	float								m_volume;
-	
-	float								m_timeAboveVolumeThreshold;
-	float								m_volumeThresholdActive;
+
 	float								m_volumeThresholdPassive;
+	float								m_volumeThresholdActive;
+	float								m_timeThresholdActive;
 
 	vector<float>						highPassFilter(float cutoff, vector<float> spectrum);
 	vector<float>						lowPassFilter(float cutoff, vector<float> spectrum);
@@ -46,17 +53,21 @@ class DEMO_trackerApp : public App {
 	void								sendValues();
 
 	float								m_highPassCutoff;
+	float								m_lowPassCutoff;
 
 	Timer								m_timer;
+	InteractionState					m_state;
 
 
 };
 
 void DEMO_trackerApp::setup()
 {
-	m_highPassCutoff = 100.f;
 
-	m_volumeThresholdActive = 0.005;
+	m_state = IDLE;
+
+	m_highPassCutoff = 100.f;
+	m_lowPassCutoff = 10000.f;
 
 	m_server = std::make_shared<OSCServer>(3339);
 	
@@ -71,6 +82,12 @@ void DEMO_trackerApp::setup()
 	m_inputNode  >> m_monitorSpectralNode;
 	m_inputNode->enable();
 	ctx->enable();
+
+
+	m_volumeThresholdActive = 0.005f;
+	m_volumeThresholdPassive = 0.003f;
+	m_timeThresholdActive = 2.0f;
+
 
 }
 
@@ -99,16 +116,49 @@ void DEMO_trackerApp::manageTimerBasedOnVolume(float volume) {
 
 void DEMO_trackerApp::update()
 {
-	m_magSpectrum = highPassFilter(m_highPassCutoff, m_monitorSpectralNode->getMagSpectrum());
-
+	
 	m_volume = m_monitorSpectralNode->getVolume();
-	m_spectralCentroid = m_monitorSpectralNode->getSpectralCentroid();
-	m_spectralFlux = getSpectralFlux(m_magSpectrum);
-	m_spectralSharpness = getSpectralSharpness(m_magSpectrum);
 
-	manageTimerBasedOnVolume(m_volume);
+	if (m_volume > m_volumeThresholdPassive) {
 
-	sendValues();
+		m_state = PASSIVE;
+
+		
+		//filtering
+		m_magSpectrum = highPassFilter(m_highPassCutoff, m_monitorSpectralNode->getMagSpectrum());
+		m_magSpectrum = lowPassFilter(m_lowPassCutoff, m_magSpectrum);
+		
+		//calculating values
+		m_spectralCentroid = m_monitorSpectralNode->getSpectralCentroid();
+		m_spectralFlux = getSpectralFlux(m_magSpectrum);
+		m_spectralSharpness = getSpectralSharpness(m_magSpectrum);
+
+		
+		if (m_volume > m_volumeThresholdActive) {
+
+			if (m_timer.isStopped()) {
+				m_timer.start();
+			}
+			else {
+				if (m_timer.getSeconds() > m_timeThresholdActive) {
+					m_state = ACTIVE;
+				}
+			}
+		}
+		else {
+			if (!m_timer.isStopped()) {
+				m_timer.stop();
+				//end recording
+			}
+		}
+
+
+		sendValues();
+	}
+	else {
+		m_state = IDLE;
+	};
+
 }
 
 void DEMO_trackerApp::draw()
@@ -205,16 +255,25 @@ void 	DEMO_trackerApp::sendValues() {
 		time = (float)m_timer.getSeconds();
 	}
 
-	/*ci::osc::Message msg("/value/");
-	msg.append((float)1.0f);
+	//active flag
+	//m_spectralCentroid
+	//m_spectralFlux 
+	//m_spectralSharpness
+	
+	ci::osc::Message msg("/value/");
+	
+	if(m_state == ACTIVE)
+		msg.append((int)1);
+	else
+		msg.append((int)0);
+
+	msg.append((float)m_spectralCentroid);
+	msg.append((float)m_spectralFlux);
+	msg.append((float)m_spectralSharpness);
 
 
 	m_server->sendMsg(msg);
-	*/
-
-	console() << "Time " << time << std::endl;
-	console() << "SpectralCentroid " << m_spectralCentroid << std::endl;
-	console() << "Volume " << m_volume << std::endl;
+	
 }
 
 
