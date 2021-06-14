@@ -42,6 +42,14 @@ class DEMO_trackerApp : public App {
 	float								m_spectralSharpness; //ratio of high frequency energy compared to total energy
 	float								m_volume;
 
+	static const int					m_filterLength = 100;
+
+	float								m_spectralCentroidBuffer[m_filterLength];
+	float								m_spectralFluxBuffer[m_filterLength];
+	float								m_spectralSharpnessBuffer[m_filterLength];
+
+	int									m_currentIndex;
+
 	Timer								m_timer;
 	InteractionState					m_state;
 
@@ -61,7 +69,7 @@ class DEMO_trackerApp : public App {
 	const float							m_lowPassCutoff = 20000.0f;
 	const float							m_volumeThresholdPassive = 40.0f;
 	const float							m_volumeThresholdActive  = 55.0f;
-	const float							m_timeThresholdActive = 0.5f;;
+	const float							m_timeThresholdActive = 0.5f;
 	
 
 
@@ -78,6 +86,7 @@ void DEMO_trackerApp::setup()
 
 	m_inputNode = ctx->createInputDeviceNode();
 	m_monitorSpectralNode = ctx->makeNode(new audio::MonitorSpectralNode());
+	m_monitorSpectralNode->setSmoothingFactor(.9f);
 	m_recorderNode = ctx->makeNode(new audio::BufferRecorderNode());
 	m_recorderNode->setNumSeconds(10);
 	
@@ -87,6 +96,8 @@ void DEMO_trackerApp::setup()
 	m_inputNode  >> m_monitorSpectralNode >> m_recorderNode;
 	m_inputNode->enable();
 	ctx->enable();
+
+	m_currentIndex = -1;
 
 }
 
@@ -133,6 +144,13 @@ void DEMO_trackerApp::update()
 		m_spectralFlux = getSpectralFlux(m_magSpectrum,m_prevMagSpectrum);
 		m_spectralSharpness = getSpectralSharpness(m_magSpectrum);
 
+		m_currentIndex = (m_currentIndex + 1) % m_filterLength;
+
+		m_spectralCentroidBuffer[m_currentIndex] = m_spectralCentroid;
+		m_spectralFluxBuffer[m_currentIndex] = m_spectralFlux;
+		m_spectralSharpnessBuffer[m_currentIndex] = m_spectralSharpness;
+
+
 		
 		if (m_volume > m_volumeThresholdActive) {
 
@@ -155,7 +173,7 @@ void DEMO_trackerApp::update()
 				m_timer.stop();
 				m_recorderNode->stop();
 				std::string fileName = "audio/" + getCurrentTime() + ".wav";
-				m_recorderNode->writeToFile(fileName);
+				//m_recorderNode->writeToFile(fileName);
 			}
 		}
 
@@ -279,8 +297,22 @@ void 	DEMO_trackerApp::sendValues() {
 	//active flag
 	//m_spectralCentroid
 	//m_spectralFlux 
-	//m_spectralSharpness
-	
+	//m_spectralSharpness  
+
+	float avgSpectralCentroid = 0.0f;
+	float avgSpectralFlux = 0.0f;
+	float avgSpectralSharpness = 0.0f;
+
+	for (int i = 0; i < m_filterLength; i++) {
+		avgSpectralCentroid += m_spectralCentroidBuffer[i];
+		avgSpectralFlux += m_spectralFluxBuffer[i];
+		avgSpectralSharpness += m_spectralSharpnessBuffer[i];
+	}
+
+	avgSpectralCentroid /= m_filterLength;
+	avgSpectralFlux /= m_filterLength;
+	avgSpectralSharpness /= m_filterLength;
+
 	ci::osc::Message msg("/value/");
 	
 	if(m_state == ACTIVE)
@@ -288,14 +320,14 @@ void 	DEMO_trackerApp::sendValues() {
 	else
 		msg.append((int)0);
 
-	msg.append((float)m_spectralCentroid);
-	msg.append((float)m_spectralFlux);
-	msg.append((float)m_spectralSharpness);
+	msg.append((float)avgSpectralCentroid);
+	msg.append((float)avgSpectralFlux);
+	msg.append((float)avgSpectralSharpness);
 
 	console() << "Active   " << m_state << std::endl;
-	console() << "Centroid " << m_spectralCentroid << std::endl;
-	console() << "Flux     " << m_spectralFlux << std::endl;
-	console() << "Sharpness" << m_spectralSharpness << std::endl;
+	console() << "Centroid " << avgSpectralCentroid << std::endl;
+	console() << "Flux     " << avgSpectralFlux << std::endl;
+	console() << "Sharpness" << avgSpectralSharpness << std::endl;
 
 	m_server->sendMsg(msg);
 	
