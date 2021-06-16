@@ -42,7 +42,7 @@ class DEMO_trackerApp : public App {
 	float								m_spectralSharpness; //ratio of high frequency energy compared to total energy
 	float								m_volume;
 
-	static const int					m_filterLength = 100;
+	static const int					m_filterLength = 50;
 
 	float								m_spectralCentroidBuffer[m_filterLength];
 	float								m_spectralFluxBuffer[m_filterLength];
@@ -55,9 +55,12 @@ class DEMO_trackerApp : public App {
 
 	vector<float>						highPassFilter(float cutoff, vector<float> spectrum);
 	vector<float>						lowPassFilter(float cutoff, vector<float> spectrum);
+
+	vector<float>						volumeFilter(vector<float> spectrum);
 	
 	float								getSpectralFlux(vector<float> spectrum, vector<float> prevSpectrum);
 	float								getSpectralSharpness(vector<float> spectrum);
+	float								getSpectralBrigthness();
 
 	void								manageTimerBasedOnVolume(float volume);
 
@@ -65,13 +68,22 @@ class DEMO_trackerApp : public App {
 
 	std::string							getCurrentTime();
 
-	const float							m_highPassCutoff = 20.0f;;
+	float								normalize(float min, float max, float value);
+
+	const float							m_highPassCutoff = 200.0f;;
 	const float							m_lowPassCutoff = 20000.0f;
 	const float							m_volumeThresholdPassive = 40.0f;
-	const float							m_volumeThresholdActive  = 55.0f;
-	const float							m_timeThresholdActive = 0.5f;
+	const float							m_volumeThresholdActive  = 50.0f;
+	const float							m_timeThresholdActive = 1.f;
 	
+	const float							m_minFlux = 0.0f;
+	const float							m_maxFlux = 100.0f;
 
+	const float							m_minSharpness = 10.0f;
+	const float							m_maxSharpness = 100.0f;
+
+	const float							m_minBrightness = 1000.0f;
+	const float							m_maxBrightness = 8000.0f;
 
 };
 
@@ -138,9 +150,9 @@ void DEMO_trackerApp::update()
 		//filtering
 		m_magSpectrum = highPassFilter(m_highPassCutoff, m_monitorSpectralNode->getMagSpectrum());
 		m_magSpectrum = lowPassFilter(m_lowPassCutoff, m_magSpectrum);
-		
+		m_magSpectrum = volumeFilter(m_magSpectrum);
 		//calculating values
-		m_spectralCentroid = m_monitorSpectralNode->getSpectralCentroid();
+		m_spectralCentroid = getSpectralBrigthness();
 		m_spectralFlux = getSpectralFlux(m_magSpectrum,m_prevMagSpectrum);
 		m_spectralSharpness = getSpectralSharpness(m_magSpectrum);
 
@@ -170,9 +182,13 @@ void DEMO_trackerApp::update()
 		}
 		else {
 			if (!m_timer.isStopped()) {
-				m_timer.stop();
-				m_recorderNode->stop();
-				std::string fileName = "audio/" + getCurrentTime() + ".wav";
+				if (m_timer.getSeconds() > m_timeThresholdActive && m_timer.getSeconds() < 5.0f) {
+					m_state = ACTIVE;
+				}else{
+					m_timer.stop();
+					m_recorderNode->stop();
+					std::string fileName = "audio/" + getCurrentTime() + ".wav";
+				}
 				//m_recorderNode->writeToFile(fileName);
 			}
 		}
@@ -267,6 +283,18 @@ vector<float>	DEMO_trackerApp::lowPassFilter(float cutoff, vector<float> spectru
 	return spectrum;
 }
 
+
+vector<float>	DEMO_trackerApp::volumeFilter(vector<float> spectrum) {
+	for (int i = 0; i < spectrum.size(); i++) {
+		
+		if(audio::linearToDecibel(spectrum[i]) < 20.0f)
+			spectrum[i] = 0.0f;
+	}
+	return spectrum;
+}
+
+
+
 float	DEMO_trackerApp::getSpectralFlux(vector<float> spectrum, vector<float> prevSpectrum) {
 
 	if (spectrum.size() != prevSpectrum.size()) {
@@ -279,19 +307,45 @@ float	DEMO_trackerApp::getSpectralFlux(vector<float> spectrum, vector<float> pre
 		flux += audio::linearToDecibel(abs(spectrum[i] - prevSpectrum[i]));
 	};
 
-	return flux;
+	flux /= (float)spectrum.size();
+
+	return normalize(m_minFlux,m_maxFlux,flux);
 }
 float	DEMO_trackerApp::getSpectralSharpness(vector<float> spectrum) {
-	float sharpness = 0.0f;
+	float weightedSum = 0.0f;
+	float sum = 0.0f;
 
 	for (int i = 0; i < spectrum.size(); i++) {
-		sharpness += i * audio::linearToDecibel(spectrum[i]);
+		weightedSum += i * audio::linearToDecibel(spectrum[i]);
+		sum += audio::linearToDecibel(spectrum[i]);
 	};
+	console() <<   weightedSum / sum << std::endl;
 
-	sharpness /= spectrum.size();
+	if(sum > 0)
+		return  normalize(m_minSharpness,m_maxSharpness, weightedSum / sum);
 
-	return sharpness;
+	return 0.0f;
 }
+
+float	DEMO_trackerApp::getSpectralBrigthness() {
+	float centroid = m_monitorSpectralNode->getSpectralCentroid();
+	console() << "Brightness " << centroid << std::endl;
+	return normalize(m_minBrightness, m_maxBrightness, centroid);
+}
+
+float	DEMO_trackerApp::normalize(float min, float max, float value) {
+	float v =  (value - min) / (max - min);
+
+	/*if (v < 0.0f)
+		return 0.0f;
+	else if (v > 1.0f)
+		return 1.0f;
+	else*/
+		return v;
+}
+
+
+
 void 	DEMO_trackerApp::sendValues() {
 	
 	//active flag
@@ -324,11 +378,6 @@ void 	DEMO_trackerApp::sendValues() {
 	msg.append((float)avgSpectralFlux);
 	msg.append((float)avgSpectralSharpness);
 
-	console() << "Active   " << m_state << std::endl;
-	console() << "Centroid " << avgSpectralCentroid << std::endl;
-	console() << "Flux     " << avgSpectralFlux << std::endl;
-	console() << "Sharpness" << avgSpectralSharpness << std::endl;
-
 	m_server->sendMsg(msg);
 	
 }
@@ -345,6 +394,5 @@ std::string	DEMO_trackerApp::getCurrentTime() {
 	 std::string str(buffer);
 	 return str;
 }
-
 
 CINDER_APP( DEMO_trackerApp, RendererGl )
