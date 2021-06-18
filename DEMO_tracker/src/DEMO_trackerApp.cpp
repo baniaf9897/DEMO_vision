@@ -51,6 +51,7 @@ class DEMO_trackerApp : public App {
 	int									m_currentIndex;
 
 	Timer								m_timer;
+	Timer								m_timerActiveInteraction;
 	InteractionState					m_state;
 
 	vector<float>						highPassFilter(float cutoff, vector<float> spectrum);
@@ -175,7 +176,6 @@ void DEMO_trackerApp::update()
 			else {
 				if (m_timer.getSeconds() > m_timeThresholdActive) {
 
-
 					if (m_recorderNode->getWritePosition() == 0) {
 						m_recorderNode->start();
 					}
@@ -185,9 +185,13 @@ void DEMO_trackerApp::update()
 		}
 		else {
 			if (!m_timer.isStopped()) {
-				if (m_timer.getSeconds() > m_timeThresholdActive && m_timer.getSeconds() < 5.0f) {
+				if (m_timerActiveInteraction.isStopped()) {
+					m_timerActiveInteraction.start();
+				}
+				if (m_timer.getSeconds() > m_timeThresholdActive && m_timerActiveInteraction.getSeconds() < 2.0f) {
 					m_state = ACTIVE;
 				}else{
+					m_timerActiveInteraction.stop();
 					m_timer.stop();
 					m_recorderNode->stop();
 					std::string fileName = "audio/" + getCurrentTime() + ".wav";
@@ -322,7 +326,6 @@ float	DEMO_trackerApp::getSpectralSharpness(vector<float> spectrum) {
 		weightedSum += i * audio::linearToDecibel(spectrum[i]);
 		sum += audio::linearToDecibel(spectrum[i]);
 	};
-	console() <<   weightedSum / sum << std::endl;
 
 	if(sum > 0)
 		return  normalize(m_minSharpness,m_maxSharpness, weightedSum / sum);
@@ -332,7 +335,6 @@ float	DEMO_trackerApp::getSpectralSharpness(vector<float> spectrum) {
 
 float	DEMO_trackerApp::getSpectralBrigthness() {
 	float centroid = m_monitorSpectralNode->getSpectralCentroid();
-	console() << "Brightness " << centroid << std::endl;
 	return normalize(m_minBrightness, m_maxBrightness, centroid);
 }
 
