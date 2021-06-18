@@ -85,6 +85,9 @@ class DEMO_trackerApp : public App {
 	const float							m_minBrightness = 1000.0f;
 	const float							m_maxBrightness = 8000.0f;
 
+	const float							m_minVolume = 0.0f;
+	const float							m_maxVolume = 80.0f;
+
 };
 
 void DEMO_trackerApp::setup()
@@ -377,6 +380,7 @@ void 	DEMO_trackerApp::sendValues() {
 	msg.append((float)avgSpectralCentroid);
 	msg.append((float)avgSpectralFlux);
 	msg.append((float)avgSpectralSharpness);
+	msg.append((float)normalize(m_minVolume, m_maxVolume, m_volume));
 
 	m_server->sendMsg(msg);
 	
