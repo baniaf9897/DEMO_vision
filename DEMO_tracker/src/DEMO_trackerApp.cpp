@@ -5,6 +5,7 @@
 #include "cinder/Timer.h"
 
 #include "OSCServer.h"
+#include "cinder/params/Params.h"
 
 using namespace ci;
 using namespace ci::app;
@@ -15,6 +16,11 @@ enum InteractionState {
 	PASSIVE,
 	ACTIVE
 };
+
+void prepareSettings(App::Settings* settings)
+{
+	settings->setHighDensityDisplayEnabled();
+}
 
 
 class DEMO_trackerApp : public App {
@@ -32,6 +38,8 @@ class DEMO_trackerApp : public App {
 	audio::InputDeviceNodeRef			m_inputNode;
 	audio::MonitorSpectralNodeRef		m_monitorSpectralNode;
 	audio::BufferRecorderNodeRef		m_recorderNode;
+	
+	params::InterfaceGlRef				m_params;
 
 	//audio::FilterHighPassNodeRef		m_highPass;
 	vector<float>						m_magSpectrum;
@@ -71,23 +79,24 @@ class DEMO_trackerApp : public App {
 
 	float								normalize(float min, float max, float value);
 
-	const float							m_highPassCutoff = 200.0f;;
-	const float							m_lowPassCutoff = 20000.0f;
-	const float							m_volumeThresholdPassive = 40.0f;
-	const float							m_volumeThresholdActive  = 50.0f;
-	const float							m_timeThresholdActive = 1.f;
+	float								m_highPassCutoff = 200.0f;;
+	float								m_lowPassCutoff = 20000.0f;
+
+	float								m_volumeThresholdPassive = 40.0f;
+	float								m_volumeThresholdActive  = 50.0f;
+	float								m_timeThresholdActive = 1.f;
 	
-	const float							m_minFlux = 0.0f;
-	const float							m_maxFlux = 100.0f;
+	float								m_minFlux = 0.0f;
+	float								m_maxFlux = 100.0f;
 
-	const float							m_minSharpness = 10.0f;
-	const float							m_maxSharpness = 100.0f;
+	float								m_minSharpness = 10.0f;
+	float								m_maxSharpness = 100.0f;
 
-	const float							m_minBrightness = 1000.0f;
-	const float							m_maxBrightness = 8000.0f;
+	float								m_minBrightness = 1000.0f;
+	float								m_maxBrightness = 8000.0f;
 
-	const float							m_minVolume = 0.0f;
-	const float							m_maxVolume = 80.0f;
+	float								m_minVolume = 0.0f;
+	float								m_maxVolume = 80.0f;
 
 };
 
@@ -114,6 +123,21 @@ void DEMO_trackerApp::setup()
 	ctx->enable();
 
 	m_currentIndex = -1;
+
+	m_params = params::InterfaceGl::create(getWindow(), "App parameters", toPixels(ivec2(200, 400)));
+
+
+	// Setup some basic parameters.
+	m_params->addParam("HighPass Cutoff", &m_highPassCutoff);
+	m_params->addParam("LowPass Cutoff", &m_lowPassCutoff);
+	m_params->addSeparator();
+
+	m_params->addParam("Passive Interaction Threshold (Volume)", &m_volumeThresholdPassive);
+	m_params->addParam("Active Interaction Threshold (Volume)", &m_volumeThresholdActive);
+	m_params->addParam("Active Interaction Threshold (Time)", &m_timeThresholdActive);
+
+	m_params->addSeparator();
+
 
 }
 
@@ -215,7 +239,7 @@ void DEMO_trackerApp::draw()
 	gl::enableAlphaBlending();
 
 	drawSpectrumPlot(m_magSpectrum);
-
+	m_params->draw();
 }
 
 void DEMO_trackerApp::drawSpectrumPlot(const vector<float>& magSpectrum) 	
@@ -341,11 +365,11 @@ float	DEMO_trackerApp::getSpectralBrigthness() {
 float	DEMO_trackerApp::normalize(float min, float max, float value) {
 	float v =  (value - min) / (max - min);
 
-	/*if (v < 0.0f)
+	if (v < 0.0f)
 		return 0.0f;
 	else if (v > 1.0f)
 		return 1.0f;
-	else*/
+	else
 		return v;
 }
 
@@ -401,4 +425,4 @@ std::string	DEMO_trackerApp::getCurrentTime() {
 	 return str;
 }
 
-CINDER_APP( DEMO_trackerApp, RendererGl )
+CINDER_APP( DEMO_trackerApp, RendererGl, prepareSettings)
