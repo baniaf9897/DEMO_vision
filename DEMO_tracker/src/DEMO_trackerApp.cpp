@@ -50,7 +50,7 @@ class DEMO_trackerApp : public App {
 	float								m_spectralSharpness; //ratio of high frequency energy compared to total energy
 	float								m_volume;
 
-	static const int					m_filterLength = 50;
+	static const int					m_filterLength = 5;
 
 	float								m_spectralCentroidBuffer[m_filterLength];
 	float								m_spectralFluxBuffer[m_filterLength];
@@ -85,7 +85,10 @@ class DEMO_trackerApp : public App {
 	float								m_volumeThresholdPassive = 40.0f;
 	float								m_volumeThresholdActive  = 50.0f;
 	float								m_timeThresholdActive = 1.f;
-	
+
+	float								m_volumeCutoffLow = 20.0f;
+	float								m_volumeCutoffHigh = 70.0f;
+
 	float								m_minFlux = 0.0f;
 	float								m_maxFlux = 100.0f;
 
@@ -111,7 +114,6 @@ void DEMO_trackerApp::setup()
 
 	m_inputNode = ctx->createInputDeviceNode();
 	m_monitorSpectralNode = ctx->makeNode(new audio::MonitorSpectralNode());
-	m_monitorSpectralNode->setSmoothingFactor(.9f);
 	m_recorderNode = ctx->makeNode(new audio::BufferRecorderNode());
 	m_recorderNode->setNumSeconds(10);
 	
@@ -124,12 +126,16 @@ void DEMO_trackerApp::setup()
 
 	m_currentIndex = -1;
 
-	m_params = params::InterfaceGl::create(getWindow(), "App parameters", toPixels(ivec2(200, 400)));
+	m_params = params::InterfaceGl::create(getWindow(), "App parameters", toPixels(ivec2(300, 400)));
 
 
 	// Setup some basic parameters.
 	m_params->addParam("HighPass Cutoff", &m_highPassCutoff);
 	m_params->addParam("LowPass Cutoff", &m_lowPassCutoff);
+
+	m_params->addParam("Volume Cutoff Low", &m_volumeCutoffLow);
+	m_params->addParam("Volume Cutoff High", &m_volumeCutoffHigh);
+
 	m_params->addSeparator();
 
 	m_params->addParam("Passive Interaction Threshold (Volume)", &m_volumeThresholdPassive);
@@ -318,7 +324,7 @@ vector<float>	DEMO_trackerApp::lowPassFilter(float cutoff, vector<float> spectru
 vector<float>	DEMO_trackerApp::volumeFilter(vector<float> spectrum) {
 	for (int i = 0; i < spectrum.size(); i++) {
 		
-		if(audio::linearToDecibel(spectrum[i]) < 20.0f)
+		if(audio::linearToDecibel(spectrum[i]) < m_volumeCutoffLow || audio::linearToDecibel(spectrum[i])> m_volumeCutoffHigh)
 			spectrum[i] = 0.0f;
 	}
 	return spectrum;
