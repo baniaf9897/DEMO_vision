@@ -87,7 +87,7 @@ class DEMO_trackerApp : public App {
 	float								m_timeThresholdActive = 1.f;
 
 	float								m_volumeCutoffLow = 20.0f;
-	float								m_volumeCutoffHigh = 70.0f;
+	float								m_volumeCutoffHigh = 80.0f;
 
 	float								m_minFlux = 0.0f;
 	float								m_maxFlux = 100.0f;
@@ -97,9 +97,6 @@ class DEMO_trackerApp : public App {
 
 	float								m_minBrightness = 1000.0f;
 	float								m_maxBrightness = 8000.0f;
-
-	float								m_minVolume = 0.0f;
-	float								m_maxVolume = 80.0f;
 
 };
 
@@ -141,7 +138,22 @@ void DEMO_trackerApp::setup()
 	m_params->addParam("Passive Interaction Threshold (Volume)", &m_volumeThresholdPassive);
 	m_params->addParam("Active Interaction Threshold (Volume)", &m_volumeThresholdActive);
 	m_params->addParam("Active Interaction Threshold (Time)", &m_timeThresholdActive);
+	m_params->addSeparator();
+	
+	m_params->addParam("Volume Cutoff Low", &m_volumeCutoffLow);
+	m_params->addParam("Volume Cutoff High", &m_volumeCutoffHigh);
+	m_params->addSeparator();
 
+	m_params->addParam("Min Flux", &m_minFlux);
+	m_params->addParam("Max Flux", &m_maxFlux);
+	m_params->addSeparator();
+
+	m_params->addParam("Min Brightness", &m_minBrightness);
+	m_params->addParam("Max Brightness", &m_maxBrightness);
+	m_params->addSeparator();
+
+	m_params->addParam("Min Sharpness", &m_minSharpness);
+	m_params->addParam("Max Sharpness", &m_maxSharpness);
 	m_params->addSeparator();
 
 
@@ -412,7 +424,7 @@ void 	DEMO_trackerApp::sendValues() {
 	msg.append((float)avgSpectralCentroid);
 	msg.append((float)avgSpectralFlux);
 	msg.append((float)avgSpectralSharpness);
-	msg.append((float)normalize(m_minVolume, m_maxVolume, m_volume));
+	msg.append((float)normalize(m_volumeCutoffLow, m_volumeCutoffHigh, m_volume));
 
 	m_server->sendMsg(msg);
 	
