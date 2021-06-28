@@ -26,7 +26,6 @@ void prepareSettings(App::Settings* settings)
 class DEMO_trackerApp : public App {
   public:
 	void setup() override;
-	void mouseDown( MouseEvent event ) override;
 	void update() override;
 	void draw() override;
 
@@ -50,6 +49,7 @@ class DEMO_trackerApp : public App {
 	float								m_spectralSharpness; //ratio of high frequency energy compared to total energy
 	float								m_volume;
 
+
 	static const int					m_filterLength = 5;
 
 	float								m_spectralCentroidBuffer[m_filterLength];
@@ -60,6 +60,8 @@ class DEMO_trackerApp : public App {
 
 	Timer								m_timer;
 	Timer								m_timerActiveInteraction;
+	Timer								m_coolDownTimer;
+
 	InteractionState					m_state;
 
 	vector<float>						highPassFilter(float cutoff, vector<float> spectrum);
@@ -71,13 +73,13 @@ class DEMO_trackerApp : public App {
 	float								getSpectralSharpness(vector<float> spectrum);
 	float								getSpectralBrigthness();
 
-	void								manageTimerBasedOnVolume(float volume);
-
 	void								sendValues();
 
 	std::string							getCurrentTime();
 
 	float								normalize(float min, float max, float value);
+
+	void								calcValues();
 
 	float								m_highPassCutoff = 200.0f;;
 	float								m_lowPassCutoff = 20000.0f;
@@ -90,13 +92,17 @@ class DEMO_trackerApp : public App {
 	float								m_volumeCutoffHigh = 80.0f;
 
 	float								m_minFlux = 0.0f;
-	float								m_maxFlux = 100.0f;
+	float								m_maxFlux = 50.0f;
 
 	float								m_minSharpness = 10.0f;
-	float								m_maxSharpness = 100.0f;
+	float								m_maxSharpness = 50.0f;
 
-	float								m_minBrightness = 1000.0f;
-	float								m_maxBrightness = 8000.0f;
+	float								m_minBrightness = 100.0f;
+	float								m_maxBrightness = 1000.0f;
+
+
+	int									m_minActiveInteractionTime = 2;
+	int									m_coolDownTime = 20;
 
 };
 
@@ -156,60 +162,59 @@ void DEMO_trackerApp::setup()
 	m_params->addParam("Max Sharpness", &m_maxSharpness);
 	m_params->addSeparator();
 
+	m_params->addParam("Min Interaction Time", &m_minActiveInteractionTime);
+	m_params->addParam("CoolDown Time", &m_coolDownTime);
+
 
 }
 
-void DEMO_trackerApp::mouseDown( MouseEvent event )
-{
-	
+void DEMO_trackerApp::calcValues() {
+	m_prevMagSpectrum = m_magSpectrum;
+
+	//filtering
+	m_magSpectrum = highPassFilter(m_highPassCutoff, m_monitorSpectralNode->getMagSpectrum());
+	m_magSpectrum = lowPassFilter(m_lowPassCutoff, m_magSpectrum);
+	m_magSpectrum = volumeFilter(m_magSpectrum);
+	//calculating values
+	m_spectralCentroid = getSpectralBrigthness();
+	m_spectralFlux = getSpectralFlux(m_magSpectrum, m_prevMagSpectrum);
+	m_spectralSharpness = getSpectralSharpness(m_magSpectrum);
+
+	m_currentIndex = (m_currentIndex + 1) % m_filterLength;
+
+	m_spectralCentroidBuffer[m_currentIndex] = m_spectralCentroid;
+	m_spectralFluxBuffer[m_currentIndex] = m_spectralFlux;
+	m_spectralSharpnessBuffer[m_currentIndex] = m_spectralSharpness;
 }
 
-void DEMO_trackerApp::manageTimerBasedOnVolume(float volume) {
-	if (volume > m_volumeThresholdActive) {
 
-		if (m_timer.isStopped()) {
-			m_timer.start();
-			//record audio
 
-		};
-	}
-	else {
-		if (!m_timer.isStopped()) {
-			m_timer.stop();
-			//end recording
-		}
-	}
-
-}
 
 void DEMO_trackerApp::update()
 {
-	
+	InteractionState newState = IDLE;
 	m_volume = audio::linearToDecibel(m_monitorSpectralNode->getVolume());
+
+	if (!m_coolDownTimer.isStopped() && m_coolDownTimer.getSeconds() < m_coolDownTime) {
+		console() << "Cool Down" << std::endl;
+		newState = PASSIVE;
+		sendValues();
+
+		return;
+	}
+	else {
+		m_coolDownTimer.stop();
+	};
+
+
+
 
 	if (m_volume > m_volumeThresholdPassive) {
 
-		m_state = PASSIVE;
+		newState = PASSIVE;
 
-		m_prevMagSpectrum = m_magSpectrum;
+		calcValues();
 
-		//filtering
-		m_magSpectrum = highPassFilter(m_highPassCutoff, m_monitorSpectralNode->getMagSpectrum());
-		m_magSpectrum = lowPassFilter(m_lowPassCutoff, m_magSpectrum);
-		m_magSpectrum = volumeFilter(m_magSpectrum);
-		//calculating values
-		m_spectralCentroid = getSpectralBrigthness();
-		m_spectralFlux = getSpectralFlux(m_magSpectrum,m_prevMagSpectrum);
-		m_spectralSharpness = getSpectralSharpness(m_magSpectrum);
-
-		m_currentIndex = (m_currentIndex + 1) % m_filterLength;
-
-		m_spectralCentroidBuffer[m_currentIndex] = m_spectralCentroid;
-		m_spectralFluxBuffer[m_currentIndex] = m_spectralFlux;
-		m_spectralSharpnessBuffer[m_currentIndex] = m_spectralSharpness;
-
-
-		
 		if (m_volume > m_volumeThresholdActive) {
 
 			if (m_timer.isStopped()) {
@@ -217,27 +222,35 @@ void DEMO_trackerApp::update()
 			}
 			else {
 				if (m_timer.getSeconds() > m_timeThresholdActive) {
-
+				
 					if (m_recorderNode->getWritePosition() == 0) {
 						m_recorderNode->start();
 					}
-					m_state = ACTIVE;
+					newState = ACTIVE;
 				}
 			}
 		}
 		else {
-			if (!m_timer.isStopped()) {
+			if (m_state == ACTIVE) {
 				if (m_timerActiveInteraction.isStopped()) {
 					m_timerActiveInteraction.start();
 				}
-				if (m_timer.getSeconds() > m_timeThresholdActive && m_timerActiveInteraction.getSeconds() < 2.0f) {
-					m_state = ACTIVE;
+				
+				if (m_timerActiveInteraction.getSeconds() < m_minActiveInteractionTime) {
+					newState = ACTIVE;
 				}else{
+					console() << "Stop Active Interaction" << std::endl;
 					m_timerActiveInteraction.stop();
 					m_timer.stop();
 					m_recorderNode->stop();
 					std::string fileName = "audio/" + getCurrentTime() + ".wav";
+					
+					if (m_coolDownTimer.isStopped()) {
+						m_coolDownTimer.start();
+					};
+				
 				}
+				
 				//m_recorderNode->writeToFile(fileName);
 			}
 		}
@@ -245,9 +258,9 @@ void DEMO_trackerApp::update()
 		
 		sendValues();
 	}
-	else {
-		m_state = IDLE;
-	};
+	
+
+	m_state = newState;
 
 }
 
