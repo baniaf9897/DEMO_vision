@@ -37,6 +37,11 @@ class DEMO_trackerApp : public App {
 	audio::InputDeviceNodeRef			m_inputNode;
 	audio::MonitorSpectralNodeRef		m_monitorSpectralNode;
 	audio::BufferRecorderNodeRef		m_recorderNode;
+
+	audio::FilterBandPassNodeRef		m_bandPassNode;
+	audio::FilterHighPassNodeRef		m_highPassNode;
+	audio::FilterLowPassNodeRef			m_lowPassNode;
+	audio::DelayNodeRef					m_delayNode;
 	
 	params::InterfaceGlRef				m_params;
 
@@ -50,13 +55,16 @@ class DEMO_trackerApp : public App {
 	float								m_volume;
 
 
-	static const int					m_filterLength = 5;
+	static const int					m_filterLength = 15;
+	static const int					m_filterLengthVolume = 50;
 
 	float								m_spectralCentroidBuffer[m_filterLength];
 	float								m_spectralFluxBuffer[m_filterLength];
 	float								m_spectralSharpnessBuffer[m_filterLength];
+	float								m_volumeBuffer[m_filterLengthVolume];
 
 	int									m_currentIndex;
+	int									m_currentVolumeIndex;
 
 	Timer								m_timer;
 	Timer								m_timerActiveInteraction;
@@ -81,11 +89,11 @@ class DEMO_trackerApp : public App {
 
 	void								calcValues();
 
-	float								m_highPassCutoff = 200.0f;;
+	float								m_highPassCutoff = 500.0f;;
 	float								m_lowPassCutoff = 20000.0f;
 
 	float								m_volumeThresholdPassive = 40.0f;
-	float								m_volumeThresholdActive  = 50.0f;
+	float								m_volumeThresholdActive  = 65.0f;
 	float								m_timeThresholdActive = 1.f;
 
 	float								m_volumeCutoffLow = 20.0f;
@@ -95,14 +103,16 @@ class DEMO_trackerApp : public App {
 	float								m_maxFlux = 50.0f;
 
 	float								m_minSharpness = 10.0f;
-	float								m_maxSharpness = 50.0f;
+	float								m_maxSharpness = 100.0f;
 
-	float								m_minBrightness = 100.0f;
-	float								m_maxBrightness = 1000.0f;
+	float								m_minBrightness = 10.0f;
+	float								m_maxBrightness = 7000.0f;
 
 
-	int									m_minActiveInteractionTime = 2;
-	int									m_coolDownTime = 20;
+	int									m_minActiveInteractionTime = 20;
+	int									m_coolDownTime = 3;
+
+	float								m_delay = 1.0f;
 
 };
 
@@ -116,14 +126,23 @@ void DEMO_trackerApp::setup()
 	auto ctx = ci::audio::master();
 
 	m_inputNode = ctx->createInputDeviceNode();
+	
 	m_monitorSpectralNode = ctx->makeNode(new audio::MonitorSpectralNode());
+	
 	m_recorderNode = ctx->makeNode(new audio::BufferRecorderNode());
 	m_recorderNode->setNumSeconds(10);
-	
-	//m_highPass = ctx->makeNode(new audio::FilterHighPassNode);
-	//m_highPass->setCutoffFreq(m_highPassCutoff);
 
-	m_inputNode  >> m_monitorSpectralNode >> m_recorderNode;
+	m_highPassNode = ctx->makeNode(new audio::FilterHighPassNode());
+	m_highPassNode->setFreq(m_highPassCutoff);
+
+	m_lowPassNode = ctx->makeNode(new audio::FilterLowPassNode());
+	m_lowPassNode->setFreq(m_lowPassCutoff/4.0f);
+
+	m_delayNode = ctx->makeNode(new audio::DelayNode());
+	m_delayNode->setDelaySeconds(m_delay);
+	m_delayNode->setMaxDelaySeconds(m_delay);
+
+	m_inputNode  >> m_monitorSpectralNode >> m_recorderNode >> m_highPassNode >> m_lowPassNode >> m_delayNode >> ctx->getOutput();
 	m_inputNode->enable();
 	ctx->enable();
 
@@ -164,7 +183,9 @@ void DEMO_trackerApp::setup()
 
 	m_params->addParam("Min Interaction Time", &m_minActiveInteractionTime);
 	m_params->addParam("CoolDown Time", &m_coolDownTime);
+	m_params->addSeparator();
 
+	m_params->addParam("Delay",&m_delay).updateFn([this] { m_delayNode->setDelaySeconds(m_delay);  m_delayNode->setMaxDelaySeconds(m_delay); });
 
 }
 
@@ -181,10 +202,14 @@ void DEMO_trackerApp::calcValues() {
 	m_spectralSharpness = getSpectralSharpness(m_magSpectrum);
 
 	m_currentIndex = (m_currentIndex + 1) % m_filterLength;
+	m_currentVolumeIndex = (m_currentVolumeIndex + 1) % m_filterLengthVolume;
 
 	m_spectralCentroidBuffer[m_currentIndex] = m_spectralCentroid;
 	m_spectralFluxBuffer[m_currentIndex] = m_spectralFlux;
 	m_spectralSharpnessBuffer[m_currentIndex] = m_spectralSharpness;
+
+	
+	m_volumeBuffer[m_currentVolumeIndex] = m_volume;
 }
 
 
@@ -195,8 +220,9 @@ void DEMO_trackerApp::update()
 	InteractionState newState = IDLE;
 	m_volume = audio::linearToDecibel(m_monitorSpectralNode->getVolume());
 
+
+
 	if (!m_coolDownTimer.isStopped() && m_coolDownTimer.getSeconds() < m_coolDownTime) {
-		console() << "Cool Down" << std::endl;
 		newState = PASSIVE;
 		sendValues();
 
@@ -215,9 +241,17 @@ void DEMO_trackerApp::update()
 
 		calcValues();
 
-		if (m_volume > m_volumeThresholdActive) {
+		float avgVolume = 0.0f;
 
-			if (m_timer.isStopped()) {
+		for (int i = 0; i < m_filterLengthVolume; i++) {
+			avgVolume += m_volumeBuffer[i];
+		};
+
+		avgVolume /= m_filterLengthVolume;
+
+		if (avgVolume > m_volumeThresholdActive) {
+			newState = ACTIVE;
+			/*if (m_timer.isStopped()) {
 				m_timer.start();
 			}
 			else {
@@ -228,7 +262,7 @@ void DEMO_trackerApp::update()
 					}
 					newState = ACTIVE;
 				}
-			}
+			}*/
 		}
 		else {
 			if (m_state == ACTIVE) {
@@ -241,9 +275,9 @@ void DEMO_trackerApp::update()
 				}else{
 					console() << "Stop Active Interaction" << std::endl;
 					m_timerActiveInteraction.stop();
-					m_timer.stop();
+					//m_timer.stop();
 					m_recorderNode->stop();
-					std::string fileName = "audio/" + getCurrentTime() + ".wav";
+					//std::string fileName = "audio/" + getCurrentTime() + ".wav";
 					
 					if (m_coolDownTimer.isStopped()) {
 						m_coolDownTimer.start();
