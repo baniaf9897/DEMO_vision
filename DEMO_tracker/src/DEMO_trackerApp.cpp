@@ -55,8 +55,8 @@ class DEMO_trackerApp : public App {
 	float								m_volume;
 
 
-	static const int					m_filterLength = 15;
-	static const int					m_filterLengthVolume = 50;
+	static const int					m_filterLength = 5;
+	static const int					m_filterLengthVolume = 20;
 
 	float								m_spectralCentroidBuffer[m_filterLength];
 	float								m_spectralFluxBuffer[m_filterLength];
@@ -92,25 +92,25 @@ class DEMO_trackerApp : public App {
 	float								m_highPassCutoff = 500.0f;;
 	float								m_lowPassCutoff = 20000.0f;
 
-	float								m_volumeThresholdPassive = 40.0f;
+	float								m_volumeThresholdPassive = 30.0f;
 	float								m_volumeThresholdActive  = 65.0f;
 	float								m_timeThresholdActive = 1.f;
 
-	float								m_volumeCutoffLow = 20.0f;
-	float								m_volumeCutoffHigh = 80.0f;
+	float								m_volumeCutoffLow = 30.0f;
+	float								m_volumeCutoffHigh = 100.0f;
 
 	float								m_minFlux = 0.0f;
-	float								m_maxFlux = 50.0f;
+	float								m_maxFlux = 100.0f;
 
 	float								m_minSharpness = 10.0f;
 	float								m_maxSharpness = 100.0f;
 
 	float								m_minBrightness = 10.0f;
-	float								m_maxBrightness = 7000.0f;
+	float								m_maxBrightness = 10000.0f;
 
 
-	int									m_minActiveInteractionTime = 20;
-	int									m_coolDownTime = 3;
+	int									m_minActiveInteractionTime = 5;
+	int									m_coolDownTime = 1;
 
 	float								m_delay = 1.0f;
 
@@ -140,9 +140,11 @@ void DEMO_trackerApp::setup()
 
 	m_delayNode = ctx->makeNode(new audio::DelayNode());
 	m_delayNode->setDelaySeconds(m_delay);
-	m_delayNode->setMaxDelaySeconds(m_delay);
+	m_delayNode->setMaxDelaySeconds(m_delay * 3);
 
 	m_inputNode  >> m_monitorSpectralNode >> m_recorderNode >> m_highPassNode >> m_lowPassNode >> m_delayNode >> ctx->getOutput();
+	 
+
 	m_inputNode->enable();
 	ctx->enable();
 
@@ -471,7 +473,8 @@ void 	DEMO_trackerApp::sendValues() {
 	msg.append((float)avgSpectralCentroid);
 	msg.append((float)avgSpectralFlux);
 	msg.append((float)avgSpectralSharpness);
-	msg.append((float)normalize(m_volumeCutoffLow, m_volumeCutoffHigh, m_volume));
+
+	msg.append((float)normalize(30, 100, m_volume ));
 
 	m_server->sendMsg(msg);
 	
