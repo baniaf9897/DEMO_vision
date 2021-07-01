@@ -42,6 +42,11 @@ class DEMO_trackerApp : public App {
 	audio::FilterHighPassNodeRef		m_highPassNode;
 	audio::FilterLowPassNodeRef			m_lowPassNode;
 	audio::DelayNodeRef					m_delayNode;
+
+	audio::BufferPlayerNodeRef			m_bufferPlayerNode;
+	audio::BufferRef					m_vcBuffer;
+	audio::BufferSpectralRef			m_spectralBuffer;
+
 	
 	params::InterfaceGlRef				m_params;
 
@@ -113,11 +118,12 @@ class DEMO_trackerApp : public App {
 	int									m_coolDownTime = 1;
 
 	float								m_delay = 1.0f;
-
+	unique_ptr<audio::dsp::Fft>			m_Fft;
 };
 
 void DEMO_trackerApp::setup()
 {
+
 
 	m_state = IDLE;
 
@@ -140,11 +146,20 @@ void DEMO_trackerApp::setup()
 
 	m_delayNode = ctx->makeNode(new audio::DelayNode());
 	m_delayNode->setDelaySeconds(m_delay);
-	m_delayNode->setMaxDelaySeconds(m_delay * 3);
+	m_delayNode->setMaxDelaySeconds(m_delay);
 
-	m_inputNode  >> m_monitorSpectralNode >> m_recorderNode >> m_highPassNode >> m_lowPassNode >> m_delayNode >> ctx->getOutput();
+
+	m_vcBuffer = std::make_shared<audio::Buffer>(2048, 2);
+
+	m_bufferPlayerNode = ctx->makeNode(new audio::BufferPlayerNode(m_vcBuffer));
+	
+	m_Fft = unique_ptr<audio::dsp::Fft>(new audio::dsp::Fft(2048));
+
+
+	m_inputNode >> m_monitorSpectralNode >> m_recorderNode >> m_highPassNode >> m_lowPassNode >> m_delayNode >> ctx->getOutput();
+
+	m_bufferPlayerNode >> ctx->getOutput();
 	 
-
 	m_inputNode->enable();
 	ctx->enable();
 
@@ -212,6 +227,22 @@ void DEMO_trackerApp::calcValues() {
 
 	
 	m_volumeBuffer[m_currentVolumeIndex] = m_volume;
+	
+	m_spectralBuffer = std::make_shared<audio::BufferSpectral>(2048);
+
+	/*for (int i = 0; i < m_monitorSpectralNode->getBuffer().getSize() /2.0f; i++) {
+		m_spectralBuffer->copyOffset(m_monitorSpectralNode->getBuffer(),1 ,i * 3, i);
+		m_spectralBuffer->copyOffset(m_monitorSpectralNode->getBuffer(), 1, i * 3 + 1, i);
+		m_spectralBuffer->copyOffset(m_monitorSpectralNode->getBuffer(), 1, i * 3 + 2, i);
+
+	}*/
+	m_Fft->forward(&m_monitorSpectralNode->getBuffer(), m_spectralBuffer.get());
+	m_Fft->inverse(m_spectralBuffer.get(), m_vcBuffer.get());
+
+	console() <<  m_vcBuffer->getData()+1000 << std::endl;
+
+	m_bufferPlayerNode->start();
+
 }
 
 
