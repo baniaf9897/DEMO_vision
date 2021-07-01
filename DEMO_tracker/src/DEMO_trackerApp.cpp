@@ -31,8 +31,6 @@ class DEMO_trackerApp : public App {
 
 	void drawSpectrumPlot(const vector<float>& magSpectrum);
 
-
-//	std::shared_ptr<Sender> sender;
 	std::shared_ptr<OSCServer>			m_server;
 	audio::InputDeviceNodeRef			m_inputNode;
 	audio::MonitorSpectralNodeRef		m_monitorSpectralNode;
@@ -108,6 +106,8 @@ class DEMO_trackerApp : public App {
 	float								m_minBrightness = 10.0f;
 	float								m_maxBrightness = 10000.0f;
 
+	float								m_delayLowPassCutoff = 2000.0f;
+	float								m_delayHighPassCutoff = 200.0f;
 
 	int									m_minActiveInteractionTime = 5;
 	int									m_coolDownTime = 1;
@@ -133,10 +133,10 @@ void DEMO_trackerApp::setup()
 	m_recorderNode->setNumSeconds(10);
 
 	m_highPassNode = ctx->makeNode(new audio::FilterHighPassNode());
-	m_highPassNode->setFreq(m_highPassCutoff);
+	m_highPassNode->setFreq(m_delayHighPassCutoff);
 
 	m_lowPassNode = ctx->makeNode(new audio::FilterLowPassNode());
-	m_lowPassNode->setFreq(m_lowPassCutoff/4.0f);
+	m_lowPassNode->setFreq(m_delayLowPassCutoff);
 
 	m_delayNode = ctx->makeNode(new audio::DelayNode());
 	m_delayNode->setDelaySeconds(m_delay);
@@ -166,10 +166,7 @@ void DEMO_trackerApp::setup()
 	m_params->addParam("Active Interaction Threshold (Volume)", &m_volumeThresholdActive);
 	m_params->addParam("Active Interaction Threshold (Time)", &m_timeThresholdActive);
 	m_params->addSeparator();
-	
-	m_params->addParam("Volume Cutoff Low", &m_volumeCutoffLow);
-	m_params->addParam("Volume Cutoff High", &m_volumeCutoffHigh);
-	m_params->addSeparator();
+	;
 
 	m_params->addParam("Min Flux", &m_minFlux);
 	m_params->addParam("Max Flux", &m_maxFlux);
@@ -187,6 +184,9 @@ void DEMO_trackerApp::setup()
 	m_params->addParam("CoolDown Time", &m_coolDownTime);
 	m_params->addSeparator();
 
+	m_params->addParam("Delay Cutoff Low", &m_delayLowPassCutoff).updateFn([this] { m_lowPassNode->setCutoffFreq(m_delayLowPassCutoff);   });
+	m_params->addParam("Delay Cutoff  High", & m_delayHighPassCutoff).updateFn([this] { m_highPassNode->setCutoffFreq(m_delayHighPassCutoff);     });
+	
 	m_params->addParam("Delay",&m_delay).updateFn([this] { m_delayNode->setDelaySeconds(m_delay);  m_delayNode->setMaxDelaySeconds(m_delay); });
 
 }
@@ -210,7 +210,6 @@ void DEMO_trackerApp::calcValues() {
 	m_spectralFluxBuffer[m_currentIndex] = m_spectralFlux;
 	m_spectralSharpnessBuffer[m_currentIndex] = m_spectralSharpness;
 
-	
 	m_volumeBuffer[m_currentVolumeIndex] = m_volume;
 }
 
@@ -223,19 +222,14 @@ void DEMO_trackerApp::update()
 	m_volume = audio::linearToDecibel(m_monitorSpectralNode->getVolume());
 
 
-
 	if (!m_coolDownTimer.isStopped() && m_coolDownTimer.getSeconds() < m_coolDownTime) {
 		newState = PASSIVE;
 		sendValues();
-
 		return;
 	}
 	else {
 		m_coolDownTimer.stop();
 	};
-
-
-
 
 	if (m_volume > m_volumeThresholdPassive) {
 
@@ -253,18 +247,6 @@ void DEMO_trackerApp::update()
 
 		if (avgVolume > m_volumeThresholdActive) {
 			newState = ACTIVE;
-			/*if (m_timer.isStopped()) {
-				m_timer.start();
-			}
-			else {
-				if (m_timer.getSeconds() > m_timeThresholdActive) {
-				
-					if (m_recorderNode->getWritePosition() == 0) {
-						m_recorderNode->start();
-					}
-					newState = ACTIVE;
-				}
-			}*/
 		}
 		else {
 			if (m_state == ACTIVE) {
@@ -275,23 +257,15 @@ void DEMO_trackerApp::update()
 				if (m_timerActiveInteraction.getSeconds() < m_minActiveInteractionTime) {
 					newState = ACTIVE;
 				}else{
-					console() << "Stop Active Interaction" << std::endl;
-					m_timerActiveInteraction.stop();
-					//m_timer.stop();
-					m_recorderNode->stop();
-					//std::string fileName = "audio/" + getCurrentTime() + ".wav";
-					
+ 					m_timerActiveInteraction.stop();
+ 					m_recorderNode->stop();
+ 					
 					if (m_coolDownTimer.isStopped()) {
 						m_coolDownTimer.start();
 					};
-				
 				}
-				
-				//m_recorderNode->writeToFile(fileName);
-			}
+ 			}
 		}
-
-		
 		sendValues();
 	}
 	
