@@ -98,19 +98,19 @@ class DEMO_trackerApp : public App {
 	float								m_volumeCutoffHigh = 100.0f;
 
 	float								m_minFlux = 0.0f;
-	float								m_maxFlux = 100.0f;
+	float								m_maxFlux = 40.0f;
 
 	float								m_minSharpness = 10.0f;
 	float								m_maxSharpness = 100.0f;
 
 	float								m_minBrightness = 10.0f;
-	float								m_maxBrightness = 10000.0f;
+	float								m_maxBrightness = 7000.0f;
 
 	float								m_delayLowPassCutoff = 2000.0f;
 	float								m_delayHighPassCutoff = 200.0f;
 
-	int									m_minActiveInteractionTime = 5;
-	int									m_coolDownTime = 1;
+	int									m_minActiveInteractionTime = 3;
+	int									m_coolDownTime = 5;
 
 	float								m_delay = 1.0f;
 
@@ -448,7 +448,7 @@ void 	DEMO_trackerApp::sendValues() {
 	msg.append((float)avgSpectralFlux);
 	msg.append((float)avgSpectralSharpness);
 
-	msg.append((float)normalize(30, 100, m_volume ));
+	msg.append((float)normalize(m_volumeCutoffLow, m_volumeCutoffHigh, m_volume ));
 
 	m_server->sendMsg(msg);
 	
